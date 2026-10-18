@@ -27,14 +27,6 @@ RUN apt-get update -y && \
     # Hex and Rebar
     mix local.hex --force && \
     mix local.rebar --force && \
-    # FFmpeg (latest build that doesn't cause an illegal instruction error for some users - see #347)
-    export FFMPEG_DOWNLOAD=$(case ${TARGETPLATFORM:-linux/amd64} in \
-    "linux/amd64")   echo "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2024-07-30-14-10/ffmpeg-N-116468-g0e09f6d690-linux64-gpl.tar.xz"   ;; \
-    "linux/arm64")   echo "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2024-07-30-14-10/ffmpeg-N-116468-g0e09f6d690-linuxarm64-gpl.tar.xz" ;; \
-    *)               echo ""        ;; esac) && \
-    curl -L ${FFMPEG_DOWNLOAD} --output /tmp/ffmpeg.tar.xz && \
-    tar -xf /tmp/ffmpeg.tar.xz --strip-components=2 --no-anchored -C /usr/local/bin/ "ffmpeg" && \
-    tar -xf /tmp/ffmpeg.tar.xz --strip-components=2 --no-anchored -C /usr/local/bin/ "ffprobe" && \
     # Cleanup
     apt-get clean && \
     rm -f /var/lib/apt/lists/*_*
@@ -76,10 +68,12 @@ FROM ${RUNNER_IMAGE}
 ARG TARGETPLATFORM
 ARG PORT=8945
 
-COPY --from=builder ./usr/local/bin/ffmpeg /usr/bin/ffmpeg
-COPY --from=builder ./usr/local/bin/ffprobe /usr/bin/ffprobe
-
 RUN apt-get update -y && \
+    # FFmpeg from Debian. Upstream pinned a dated yt-dlp/FFmpeg-Builds release because newer
+    # static builds hit "illegal instruction" on some (older/low-power) CPUs (see #347), but those
+    # dated releases get deleted, which broke the build. Debian's package targets baseline x86-64
+    # and arm64 so it runs on any CPU, and it gets security updates with each image rebuild.
+    apt-get install -y --no-install-recommends ffmpeg && \
     # System packages
     apt-get install -y \
       libstdc++6 \
