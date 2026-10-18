@@ -1,0 +1,19 @@
+# Secret scanning config used by .github/workflows/build_and_release.yml.
+# This repo is PUBLIC: cookies.txt, API keys, passwords and your .env never belong here.
+# Only add an allowlist entry for a value that is already public and harmless.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public dev/test values and fixtures inherited from upstream Pinchflat"
+paths = [
+  '''^config/(dev|test)\.exs$''',
+  '''^priv/grafana/''',
+  '''^test/support/files/''',
+  '''(^|/)(yarn|mix)\.lock$''',
+]
+# Upstream's documented fallback SECRET_KEY_BASE in config/runtime.exs (public; set your own via env)
+regexes = [
+  '''ZkuQMStdmUzBv\+gO3m3XZrtQW76e\+AX3QIgTLajw3b/HkTLMEx\+DOXr2WZsSS\+n8''',
+]

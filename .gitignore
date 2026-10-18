@@ -45,3 +45,13 @@ scratchpad.md
 # Database files
 *.db
 *.db-*
+
+# Local secrets and NAS data. This repo is public - never commit these.
+cookies.txt
+**/extras/cookies.txt
+*.db
+*.db-wal
+*.db-shm
+.env.*
+/config/
+/downloads/
