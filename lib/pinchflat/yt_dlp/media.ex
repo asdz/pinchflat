@@ -25,7 +25,8 @@ defmodule Pinchflat.YtDlp.Media do
     :uploaded_at,
     :duration_seconds,
     :playlist_index,
-    :predicted_media_filepath
+    :predicted_media_filepath,
+    :availability
   ]
 
   alias __MODULE__
@@ -92,7 +93,10 @@ defmodule Pinchflat.YtDlp.Media do
   Returns {:ok, %Media{}} | {:error, any, ...}.
   """
   def get_media_attributes(url, command_opts \\ [], addl_opts \\ []) do
-    all_command_opts = [:simulate, :skip_download] ++ command_opts
+    # `ignore_no_formats_error` lets yt-dlp return metadata for media we can't
+    # download right now (eg: members-only, premieres). Without it, the media item
+    # is never created and fast indexing re-requests it from YouTube on every run.
+    all_command_opts = [:simulate, :skip_download, :ignore_no_formats_error] ++ command_opts
     output_template = indexing_output_template()
 
     case backend_runner().run(url, :get_media_attributes, all_command_opts, output_template, addl_opts) do
@@ -115,7 +119,7 @@ defmodule Pinchflat.YtDlp.Media do
         if something is a short via the URL again
   """
   def indexing_output_template do
-    "%(.{id,title,live_status,original_url,description,aspect_ratio,duration,upload_date,timestamp,playlist_index,filename})j"
+    "%(.{id,title,live_status,availability,original_url,description,aspect_ratio,duration,upload_date,timestamp,playlist_index,filename})j"
   end
 
   @doc """
@@ -135,7 +139,8 @@ defmodule Pinchflat.YtDlp.Media do
       short_form_content: response["original_url"] && short_form_content?(response),
       uploaded_at: response["upload_date"] && parse_uploaded_at(response),
       playlist_index: response["playlist_index"] || 0,
-      predicted_media_filepath: response["filename"]
+      predicted_media_filepath: response["filename"],
+      availability: response["availability"]
     }
   end
 

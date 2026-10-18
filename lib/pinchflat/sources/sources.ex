@@ -300,6 +300,10 @@ defmodule Pinchflat.Sources do
       {%{enabled: false}, _} ->
         DownloadingHelpers.dequeue_pending_download_tasks(source)
 
+      # Members-only media just became downloadable (eg: you joined the channel)
+      {%{download_members_only: true}, %{enabled: true, download_media: true}} ->
+        DownloadingHelpers.enqueue_pending_download_tasks(source)
+
       _ ->
         nil
     end

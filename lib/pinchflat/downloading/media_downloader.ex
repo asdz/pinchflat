@@ -38,7 +38,15 @@ defmodule Pinchflat.Downloading.MediaDownloader do
         Media.update_media_item(media_item, %{last_error: nil})
 
       {:error, error_atom, message} ->
-        Media.update_media_item(media_item, %{last_error: StringUtils.wrap_string(message)})
+        # Remember members-only/private media so it isn't retried on every index. Members-only
+        # media is picked up again if the source's "Download members-only videos" setting is turned on.
+        error_attrs =
+          case availability_from_error(message) do
+            nil -> %{last_error: StringUtils.wrap_string(message)}
+            availability -> %{last_error: StringUtils.wrap_string(message), availability: availability}
+          end
+
+        Media.update_media_item(media_item, error_attrs)
 
         {:error, error_atom, message}
 
@@ -208,9 +216,39 @@ defmodule Pinchflat.Downloading.MediaDownloader do
   end
 
   defp recoverable_cookie_errors do
+    ["Sign in to confirm" | members_only_errors()]
+  end
+
+  @doc """
+  Infers yt-dlp's `availability` value from a download error, if the error tells us.
+
+  Returns String.t() | nil
+  """
+  def availability_from_error(message) do
+    cond do
+      members_only_error?(message) -> "subscriber_only"
+      String.contains?(to_string(message), "Private video") -> "private"
+      true -> nil
+    end
+  end
+
+  @doc """
+  Returns true if a yt-dlp error message indicates the media is members-only.
+
+  Returns boolean()
+  """
+  def members_only_error?(message) do
+    String.contains?(to_string(message), members_only_errors())
+  end
+
+  @doc """
+  Known YouTube error messages for members-only media. YouTube has used both wordings.
+  """
+  def members_only_errors do
     [
-      "Sign in to confirm",
-      "This video is available to this channel's members"
+      "This video is available to this channel's members",
+      "members-only content",
+      "Join this channel to get access"
     ]
   end
 end

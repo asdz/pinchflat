@@ -179,7 +179,7 @@ defmodule Pinchflat.YtDlp.MediaTest do
 
     test "it passes the expected default args" do
       expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes, opts, ot, _addl ->
-        assert opts == [:simulate, :skip_download]
+        assert opts == [:simulate, :skip_download, :ignore_no_formats_error]
         assert ot == Media.indexing_output_template()
 
         {:ok, media_attributes_return_fixture()}
@@ -190,7 +190,7 @@ defmodule Pinchflat.YtDlp.MediaTest do
 
     test "passes along additional command options" do
       expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes, opts, _ot, _addl ->
-        assert [:simulate, :skip_download, :custom_arg] = opts
+        assert [:simulate, :skip_download, :ignore_no_formats_error, :custom_arg] = opts
         {:ok, media_attributes_return_fixture()}
       end)
 
@@ -237,7 +237,8 @@ defmodule Pinchflat.YtDlp.MediaTest do
         "upload_date" => "20210101",
         "timestamp" => 1_600_000_000,
         "playlist_index" => 1,
-        "filename" => "TiZPUDkDYbk.mp4"
+        "filename" => "TiZPUDkDYbk.mp4",
+        "availability" => "public"
       }
 
       assert %Media{
@@ -250,8 +251,19 @@ defmodule Pinchflat.YtDlp.MediaTest do
                uploaded_at: ~U[2020-09-13 12:26:40Z],
                duration_seconds: 60,
                playlist_index: 1,
-               predicted_media_filepath: "TiZPUDkDYbk.mp4"
+               predicted_media_filepath: "TiZPUDkDYbk.mp4",
+               availability: "public"
              } == Media.response_to_struct(response)
+    end
+
+    test "captures members-only availability" do
+      response = %{
+        "original_url" => "https://www.youtube.com/watch?v=TiZPUDkDYbk",
+        "upload_date" => "20210101",
+        "availability" => "subscriber_only"
+      }
+
+      assert %Media{availability: "subscriber_only"} = Media.response_to_struct(response)
     end
 
     test "sets short_form_content to true if the URL contains /shorts/" do

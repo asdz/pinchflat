@@ -407,6 +407,31 @@ defmodule Pinchflat.MediaTest do
     end
   end
 
+  describe "list_pending_media_items_for/1 when testing availability" do
+    test "skips members-only media unless the source opts in" do
+      source = source_fixture(%{download_members_only: false})
+      _members = media_item_fixture(%{source_id: source.id, media_filepath: nil, availability: "subscriber_only"})
+      public = media_item_fixture(%{source_id: source.id, media_filepath: nil, availability: "public"})
+      unknown = media_item_fixture(%{source_id: source.id, media_filepath: nil, availability: nil})
+
+      assert Enum.sort_by(Media.list_pending_media_items_for(source), & &1.id) == [public, unknown]
+    end
+
+    test "includes members-only media when the source opts in" do
+      source = source_fixture(%{download_members_only: true})
+      members = media_item_fixture(%{source_id: source.id, media_filepath: nil, availability: "subscriber_only"})
+
+      assert Media.list_pending_media_items_for(source) == [members]
+    end
+
+    test "always skips private media" do
+      source = source_fixture(%{download_members_only: true})
+      _private = media_item_fixture(%{source_id: source.id, media_filepath: nil, availability: "private"})
+
+      assert Media.list_pending_media_items_for(source) == []
+    end
+  end
+
   describe "pending_download?/1" do
     test "returns true when the media hasn't been downloaded" do
       media_item = media_item_fixture(%{media_filepath: nil})

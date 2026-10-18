@@ -32,6 +32,7 @@ defmodule Pinchflat.Media.MediaItem do
     :upload_date_index,
     :duration_seconds,
     :predicted_media_filepath,
+    :availability,
     # these fields are captured only on download
     :media_downloaded_at,
     :media_filepath,
@@ -77,6 +78,9 @@ defmodule Pinchflat.Media.MediaItem do
     field :upload_date_index, :integer, default: 0
     field :duration_seconds, :integer
     field :playlist_index, :integer, default: 0
+    # yt-dlp's availability (public, unlisted, private, subscriber_only, premium_only, needs_auth).
+    # nil means unknown.
+    field :availability, :string
 
     field :predicted_media_filepath, :string
     field :media_filepath, :string

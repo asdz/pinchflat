@@ -204,6 +204,48 @@ defmodule Pinchflat.Downloading.MediaDownloaderTest do
     end
   end
 
+  describe "download_for_media_item/3 when media is members-only" do
+    test "marks the media item as members-only", %{media_item: media_item} do
+      expect(YtDlpRunnerMock, :run, 2, fn
+        _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, "{}"}
+        _url, :download, _opts, _ot, _addl -> {:error, "Join this channel to get access to members-only content", 1}
+      end)
+
+      assert {:error, :download_failed, _} = MediaDownloader.download_for_media_item(media_item)
+      assert Repo.reload(media_item).availability == "subscriber_only"
+    end
+
+    test "recognises the older members-only wording", %{media_item: media_item} do
+      expect(YtDlpRunnerMock, :run, 2, fn
+        _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, "{}"}
+        _url, :download, _opts, _ot, _addl -> {:error, "This video is available to this channel's members on level: x", 1}
+      end)
+
+      assert {:error, :download_failed, _} = MediaDownloader.download_for_media_item(media_item)
+      assert Repo.reload(media_item).availability == "subscriber_only"
+    end
+
+    test "marks private media as private", %{media_item: media_item} do
+      expect(YtDlpRunnerMock, :run, 2, fn
+        _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, "{}"}
+        _url, :download, _opts, _ot, _addl -> {:error, "Private video. Sign in if you've been granted access", 1}
+      end)
+
+      assert {:error, :download_failed, _} = MediaDownloader.download_for_media_item(media_item)
+      assert Repo.reload(media_item).availability == "private"
+    end
+
+    test "leaves availability alone for other errors", %{media_item: media_item} do
+      expect(YtDlpRunnerMock, :run, 2, fn
+        _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, "{}"}
+        _url, :download, _opts, _ot, _addl -> {:error, "Some other error", 1}
+      end)
+
+      assert {:error, :download_failed, _} = MediaDownloader.download_for_media_item(media_item)
+      assert Repo.reload(media_item).availability == nil
+    end
+  end
+
   describe "download_for_media_item/3 when testing non-cookie retries" do
     test "returns a recovered tuple on recoverable errors", %{media_item: media_item} do
       message = "Unable to communicate with SponsorBlock"

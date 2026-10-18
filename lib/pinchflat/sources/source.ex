@@ -30,6 +30,7 @@ defmodule Pinchflat.Sources.Source do
     fast_index
     cookie_behaviour
     download_media
+    download_members_only
     last_indexed_at
     original_url
     download_cutoff_date
@@ -80,6 +81,7 @@ defmodule Pinchflat.Sources.Source do
     field :fast_index, :boolean, default: false
     field :cookie_behaviour, Ecto.Enum, values: [:disabled, :when_needed, :all_operations], default: :disabled
     field :download_media, :boolean, default: true
+    field :download_members_only, :boolean, default: false
     field :last_indexed_at, :utc_datetime
     # Only download media items that were published after this date
     field :download_cutoff_date, :date
