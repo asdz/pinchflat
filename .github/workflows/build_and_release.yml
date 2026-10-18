@@ -53,7 +53,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run gitleaks over the source tree
-        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest dir /repo --config /repo/.gitleaks.toml --redact --no-banner
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
+            dir /repo --config /repo/.gitleaks.toml --redact --no-banner \
+            --report-format json --report-path /repo/gitleaks-report.json --exit-code 0
+          count="$(jq length gitleaks-report.json)"
+          # One annotation per finding (rule, file, line - never the secret itself)
+          jq -r '.[] | "::error file=\(.File | sub("^/repo/"; "")),line=\(.StartLine)::gitleaks rule \(.RuleID)"' gitleaks-report.json
+          echo "gitleaks findings: $count"
+          [ "$count" -eq 0 ]
 
   test:
     name: Test suite
