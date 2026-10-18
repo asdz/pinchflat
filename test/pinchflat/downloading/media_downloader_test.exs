@@ -218,7 +218,8 @@ defmodule Pinchflat.Downloading.MediaDownloaderTest do
     test "recognises the older members-only wording", %{media_item: media_item} do
       expect(YtDlpRunnerMock, :run, 2, fn
         _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, "{}"}
-        _url, :download, _opts, _ot, _addl -> {:error, "This video is available to this channel's members on level: x", 1}
+        _url, :download, _opts, _ot, _addl ->
+          {:error, "This video is available to this channel's members on level: x", 1}
       end)
 
       assert {:error, :download_failed, _} = MediaDownloader.download_for_media_item(media_item)

@@ -94,7 +94,9 @@ defmodule Pinchflat.YtDlp.Media do
     all_command_opts = [:simulate, :skip_download, :ignore_no_formats_error] ++ command_opts
     output_template = indexing_output_template()
 
-    with {:ok, output} <- backend_runner().run(url, :get_media_attributes, all_command_opts, output_template, addl_opts),
+    action = :get_media_attributes
+
+    with {:ok, output} <- backend_runner().run(url, action, all_command_opts, output_template, addl_opts),
          {:ok, parsed_json} <- decode_json(output) do
       parsed_json
       |> response_to_struct()
