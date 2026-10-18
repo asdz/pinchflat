@@ -142,6 +142,9 @@ defmodule Pinchflat.Media do
         set:
           attrs
           |> Map.drop(@fields_to_drop_on_update)
+          # yt-dlp doesn't always report availability. Don't let an unknown value
+          # wipe out a known one (eg: members-only, learned from a failed download)
+          |> then(fn a -> if is_nil(a[:availability]), do: Map.delete(a, :availability), else: a end)
           |> Map.to_list()
       ],
       conflict_target: [:source_id, :media_id]

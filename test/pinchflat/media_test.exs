@@ -718,6 +718,21 @@ defmodule Pinchflat.MediaTest do
 
       assert Repo.reload(media_item_2).playlist_index == media_attrs.playlist_index
     end
+
+    test "doesn't overwrite a known availability with an unknown one" do
+      source = source_fixture()
+
+      media_attrs =
+        media_attributes_return_fixture()
+        |> Phoenix.json_library().decode!()
+        |> Map.put("availability", "subscriber_only")
+        |> YtDlpMedia.response_to_struct()
+
+      assert {:ok, media_item} = Media.create_media_item_from_backend_attrs(source, media_attrs)
+      assert {:ok, _} = Media.create_media_item_from_backend_attrs(source, %YtDlpMedia{media_attrs | availability: nil})
+
+      assert Repo.reload(media_item).availability == "subscriber_only"
+    end
   end
 
   describe "update_media_item/2" do
