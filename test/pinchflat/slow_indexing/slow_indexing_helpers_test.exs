@@ -180,6 +180,15 @@ defmodule Pinchflat.SlowIndexing.SlowIndexingHelpersTest do
       assert Enum.all?(media_items, fn %MediaItem{} -> true end)
     end
 
+    test "returns an empty list instead of crashing when yt-dlp fails", %{source: source} do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:error, "ERROR: something broke", 1}
+      end)
+
+      assert [] == SlowIndexingHelpers.index_and_enqueue_download_for_media_items(source)
+      assert Repo.reload!(source).last_indexed_at == source.last_indexed_at
+    end
+
     test "attaches all media_items to the given source", %{source: source} do
       source_id = source.id
       assert media_items = SlowIndexingHelpers.index_and_enqueue_download_for_media_items(source)

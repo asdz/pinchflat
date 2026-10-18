@@ -95,7 +95,22 @@ defmodule Pinchflat.SlowIndexing.SlowIndexingHelpers do
     source = Repo.preload(source, [:media_profile])
     # See the method definition below for more info on how file watchers work
     # (important reading if you're not familiar with it)
-    {:ok, media_attributes} = setup_file_watcher_and_kickoff_indexing(source, opts)
+    case setup_file_watcher_and_kickoff_indexing(source, opts) do
+      {:ok, media_attributes} ->
+        create_media_items_and_enqueue_downloads(source, media_attributes)
+
+      err ->
+        # Previously this crashed with a MatchError. The job would retry and, once out of
+        # attempts, the source silently stopped being re-indexed. Now we log, still pick up
+        # pending downloads, and let the worker reschedule as normal. See issue #899.
+        Logger.error("Indexing failed for source #{source.id} (#{source.original_url}): #{inspect(err)}")
+        DownloadingHelpers.enqueue_pending_download_tasks(Repo.reload!(source))
+
+        []
+    end
+  end
+
+  defp create_media_items_and_enqueue_downloads(source, media_attributes) do
     # Reload because the source may have been updated during the (long-running) indexing process
     # and important settings like `download_media` may have changed.
     source = Repo.reload!(source)

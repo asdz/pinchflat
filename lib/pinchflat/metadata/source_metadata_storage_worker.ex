@@ -49,8 +49,25 @@ defmodule Pinchflat.Metadata.SourceMetadataStorageWorker do
     source = Repo.preload(Sources.get_source!(source_id), [:metadata, :media_profile])
     series_directory = determine_series_directory(source)
 
+    case fetch_metadata_for_source(source) do
+      {:ok, metadata} ->
+        store_metadata(source, series_directory, metadata)
+
+      err ->
+        # Previously a MatchError crash (issue #899). Source metadata is nice-to-have
+        # (images, NFO, description) so log it rather than blowing up.
+        Logger.error("Could not fetch metadata for source #{source.id} (#{source.original_url}): #{inspect(err)}")
+
+        {:error, :metadata_unavailable}
+    end
+  rescue
+    Ecto.NoResultsError -> Logger.info("#{__MODULE__} discarded: source #{source_id} not found")
+    Ecto.StaleEntryError -> Logger.info("#{__MODULE__} discarded: source #{source_id} stale")
+  end
+
+  defp store_metadata(source, series_directory, metadata) do
     {source_metadata, source_image_attrs, metadata_image_attrs} =
-      fetch_source_metadata_and_images(series_directory, source)
+      fetch_source_metadata_and_images(series_directory, source, metadata)
 
     source_metadata_filepath = MetadataFileHelpers.compress_and_store_metadata_for(source, source_metadata)
 
@@ -70,15 +87,10 @@ defmodule Pinchflat.Metadata.SourceMetadataStorageWorker do
     )
 
     :ok
-  rescue
-    Ecto.NoResultsError -> Logger.info("#{__MODULE__} discarded: source #{source_id} not found")
-    Ecto.StaleEntryError -> Logger.info("#{__MODULE__} discarded: source #{source_id} stale")
   end
 
-  defp fetch_source_metadata_and_images(series_directory, source) do
+  defp fetch_source_metadata_and_images(series_directory, source, metadata) do
     metadata_directory = MetadataFileHelpers.metadata_directory_for(source)
-
-    {:ok, metadata} = fetch_metadata_for_source(source)
     metadata_image_attrs = SourceImageParser.store_source_images(metadata_directory, metadata)
 
     if source.media_profile.download_source_images && series_directory do
@@ -94,11 +106,16 @@ defmodule Pinchflat.Metadata.SourceMetadataStorageWorker do
     output_path = DownloadOptionBuilder.build_output_path_for(source)
     runner_opts = [output: output_path]
     addl_opts = [use_cookies: Sources.use_cookies?(source, :metadata)]
-    {:ok, %{filepath: filepath}} = MediaCollection.get_source_details(source.original_url, runner_opts, addl_opts)
+    case MediaCollection.get_source_details(source.original_url, runner_opts, addl_opts) do
+      {:ok, %{filepath: filepath}} ->
+        case MetadataFileHelpers.series_directory_from_media_filepath(filepath) do
+          {:ok, series_directory} -> series_directory
+          {:error, _} -> nil
+        end
 
-    case MetadataFileHelpers.series_directory_from_media_filepath(filepath) do
-      {:ok, series_directory} -> series_directory
-      {:error, _} -> nil
+      err ->
+        Logger.warning("Could not fetch details for source #{source.id}: #{inspect(err)}")
+        nil
     end
   end
 

@@ -60,14 +60,9 @@ defmodule Pinchflat.YtDlp.Media do
     action = :get_downloadable_status
     command_opts = [:simulate, :skip_download]
 
-    case backend_runner().run(url, action, command_opts, "%(.{live_status})j", addl_opts) do
-      {:ok, output} ->
-        output
-        |> Phoenix.json_library().decode!()
-        |> parse_downloadable_status()
-
-      err ->
-        err
+    with {:ok, output} <- backend_runner().run(url, action, command_opts, "%(.{live_status})j", addl_opts),
+         {:ok, parsed_json} <- decode_json(output) do
+      parse_downloadable_status(parsed_json)
     end
   end
 
@@ -99,15 +94,11 @@ defmodule Pinchflat.YtDlp.Media do
     all_command_opts = [:simulate, :skip_download, :ignore_no_formats_error] ++ command_opts
     output_template = indexing_output_template()
 
-    case backend_runner().run(url, :get_media_attributes, all_command_opts, output_template, addl_opts) do
-      {:ok, output} ->
-        output
-        |> Phoenix.json_library().decode!()
-        |> response_to_struct()
-        |> FunctionUtils.wrap_ok()
-
-      err ->
-        err
+    with {:ok, output} <- backend_runner().run(url, :get_media_attributes, all_command_opts, output_template, addl_opts),
+         {:ok, parsed_json} <- decode_json(output) do
+      parsed_json
+      |> response_to_struct()
+      |> FunctionUtils.wrap_ok()
     end
   end
 
@@ -171,6 +162,18 @@ defmodule Pinchflat.YtDlp.Media do
   # of this field should fail at insert-time rather than here
   defp parse_uploaded_at(%{"upload_date" => nil}), do: nil
   defp parse_uploaded_at(response), do: MetadataFileHelpers.parse_upload_date(response["upload_date"])
+
+  # yt-dlp can exit successfully but write nothing (or a partial line) to the output
+  # file. Return an error tuple instead of raising so callers can handle it.
+  defp decode_json(output) do
+    case Phoenix.json_library().decode(output) do
+      {:ok, parsed_json} ->
+        {:ok, parsed_json}
+
+      {:error, _} ->
+        {:error, "Could not parse yt-dlp output as JSON: #{inspect(String.slice(output, 0, 200))}", 1}
+    end
+  end
 
   defp parse_downloadable_status(response) do
     case response["live_status"] do

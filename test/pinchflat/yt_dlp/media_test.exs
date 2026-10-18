@@ -59,6 +59,12 @@ defmodule Pinchflat.YtDlp.MediaTest do
   end
 
   describe "get_downloadable_status/1" do
+    test "returns an error instead of raising if yt-dlp writes no output" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, ""} end)
+
+      assert {:error, "Could not parse yt-dlp output as JSON" <> _, 1} = Media.get_downloadable_status(@media_url)
+    end
+
     test "returns :downloadable if the media was never live" do
       expect(YtDlpRunnerMock, :run, fn _url, :get_downloadable_status, _opts, _ot, _addl ->
         {:ok, Phoenix.json_library().encode!(%{"live_status" => "not_live"})}
@@ -168,6 +174,12 @@ defmodule Pinchflat.YtDlp.MediaTest do
   end
 
   describe "get_media_attributes/1" do
+    test "returns an error instead of raising if yt-dlp writes partial output" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes, _opts, _ot, _addl -> {:ok, "{\"id\": "} end)
+
+      assert {:error, "Could not parse yt-dlp output as JSON" <> _, 1} = Media.get_media_attributes(@media_url)
+    end
+
     test "returns a list of video attributes" do
       expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes, _opts, _ot, _addl ->
         {:ok, media_attributes_return_fixture()}
