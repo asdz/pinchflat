@@ -8,7 +8,7 @@ name: Build, Smoke Test, and Publish
 # Tags published to ghcr.io/<owner>/pinchflat:
 #   sha-<commit>   every build that passed tests. Use these to roll back to an exact build
 #   edge           latest master that passed everything
-#   stable         latest `v*` git tag that passed everything (point the NAS at this)
+#   stable         latest `v*` git tag that passed everything (point your server at this)
 #   v<version>     the release itself, eg: v2026.10.18
 #
 # Only GITHUB_TOKEN is used. Never add cookies, API keys or passwords to this repo:
@@ -43,7 +43,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Synology NASes are almost all amd64. Set this repo variable to 'linux/amd64,linux/arm64' for ARM models
+  # amd64 by default. Set the IMAGE_PLATFORMS repo variable to 'linux/amd64,linux/arm64' to also build for ARM
   DEFAULT_PLATFORMS: ${{ vars.IMAGE_PLATFORMS || 'linux/amd64' }}
 
 jobs:

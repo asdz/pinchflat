@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Boots a built Pinchflat image the way your NAS will, and checks that upgrading
+# Boots a built Pinchflat image the way a real install would, and checks that upgrading
 # and rolling back don't break the database.
 #
 # Usage: tooling/smoke_test.sh <new-image> [<previous-image>]
@@ -9,7 +9,7 @@
 # Checks, in order:
 #   1. Fresh install: new image starts on an empty /config and becomes healthy
 #   2. Upgrade:       previous image creates a DB, new image starts on that same DB
-#                     (this is what happens on your NAS when you update)
+#                     (this is what happens when an existing install updates)
 #   3. Rollback:      previous image starts again on the DB the new image migrated
 #                     (this is what happens if you revert after a bad update)
 #
@@ -125,10 +125,10 @@ if [ "$FAILED" -eq 0 ]; then
     stop
     echo "rollback works without restoring a backup"
   else
-    # Not fatal: rollback is still possible by restoring the pre-update DB backup,
-    # which the NAS update script always takes. Flag it loudly though.
+    # Not fatal: rollback is still possible by restoring a DB backup taken before
+    # updating. Flag it loudly though.
     echo "WARNING: previous image can't run on the upgraded DB."
-    echo "         Rolling back will need the DB backup (update script restores it automatically)."
+    echo "         Rolling back will need a database backup taken before the update."
     docker logs --tail 40 "$NAME" 2>&1 || true
   fi
 fi

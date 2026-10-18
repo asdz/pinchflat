@@ -106,6 +106,7 @@ defmodule Pinchflat.Metadata.SourceMetadataStorageWorker do
     output_path = DownloadOptionBuilder.build_output_path_for(source)
     runner_opts = [output: output_path]
     addl_opts = [use_cookies: Sources.use_cookies?(source, :metadata)]
+
     case MediaCollection.get_source_details(source.original_url, runner_opts, addl_opts) do
       {:ok, %{filepath: filepath}} ->
         case MetadataFileHelpers.series_directory_from_media_filepath(filepath) do

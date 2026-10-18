@@ -46,7 +46,7 @@ scratchpad.md
 *.db
 *.db-*
 
-# Local secrets and NAS data. This repo is public - never commit these.
+# Local secrets and app data. This repo is public - never commit these.
 cookies.txt
 **/extras/cookies.txt
 *.db
