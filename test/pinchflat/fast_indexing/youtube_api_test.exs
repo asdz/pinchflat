@@ -42,6 +42,20 @@ defmodule Pinchflat.FastIndexing.YoutubeApiTest do
       {:ok, source: source}
     end
 
+    test "never logs the full API key", %{source: source} do
+      Settings.set(youtube_api_key: "AIzaSecretValue1234")
+      expect(HTTPClientMock, :get, fn _url, _headers -> {:ok, "{}"} end)
+
+      previous_level = Logger.level()
+      Logger.configure(level: :debug)
+      on_exit(fn -> Logger.configure(level: previous_level) end)
+
+      log = ExUnit.CaptureLog.capture_log([level: :debug], fn -> YoutubeApi.get_recent_media_ids(source) end)
+
+      assert log =~ "ending 1234"
+      refute log =~ "AIzaSecretValue1234"
+    end
+
     test "rotates through API keys", %{source: source} do
       expect(HTTPClientMock, :get, fn url, _headers ->
         assert url =~ "key=key1"
