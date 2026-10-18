@@ -30,12 +30,12 @@ Master is also rebuilt weekly so `edge` picks up new yt-dlp, Deno and OS securit
 
 Copy `tooling/nas/pinchflat-update.sh` next to your `docker-compose.yml` and run it as root:
 
-| Command | What it does |
-|---|---|
-| `sh pinchflat-update.sh update` | Saves the current image, backs up the DB, pulls and starts the new image, and **rolls back automatically** if it isn't healthy within 5 minutes |
-| `sh pinchflat-update.sh rollback` | Previous image + the DB from just before the last update |
-| `sh pinchflat-update.sh rollback-keep-db` | Previous image, keeps the current DB (keeps anything indexed since the update) |
-| `sh pinchflat-update.sh status` | Running image, health, yt-dlp version, backups |
+| Command                                   | What it does                                                                                                                                    |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sh pinchflat-update.sh update`           | Saves the current image, backs up the DB, pulls and starts the new image, and **rolls back automatically** if it isn't healthy within 5 minutes |
+| `sh pinchflat-update.sh rollback`         | Previous image + the DB from just before the last update                                                                                        |
+| `sh pinchflat-update.sh rollback-keep-db` | Previous image, keeps the current DB (keeps anything indexed since the update)                                                                  |
+| `sh pinchflat-update.sh status`           | Running image, health, yt-dlp version, backups                                                                                                  |
 
 DB backups go to `<your config folder>/db-backups/` (last 10 kept).
 

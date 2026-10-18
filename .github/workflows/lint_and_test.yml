@@ -61,5 +61,52 @@ jobs:
           docker compose exec -T phx mix ecto.create
           docker compose exec -T phx mix ecto.migrate
 
-      - name: Run code checks
-        run: docker compose exec -T phx mix check --no-fix --no-retry
+      # Same checks as `mix check` (tooling/.check.exs), split into steps so it's obvious
+      # which one failed. A failing step posts its last output lines as an annotation.
+      - name: Write check helper
+        run: |
+          cat > "$RUNNER_TEMP/run_check.sh" <<'SCRIPT'
+          #!/usr/bin/env bash
+          title="$1"; shift
+          out="$(mktemp)"
+          if "$@" >"$out" 2>&1; then
+            tail -n 5 "$out"
+            exit 0
+          fi
+          cat "$out"
+          # Encode newlines so the whole tail lands in a single annotation
+          msg="$(tail -n 80 "$out" | sed -e 's/\x1b\[[0-9;]*m//g' -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')"
+          echo "::error title=${title} failed::${msg}"
+          exit 1
+          SCRIPT
+          chmod +x "$RUNNER_TEMP/run_check.sh"
+
+      - name: Compile (warnings are errors)
+        if: success() || failure()
+        run: |
+          "$RUNNER_TEMP/run_check.sh" "Compile" docker compose exec -T phx mix compile --warnings-as-errors --force
+
+      - name: Elixir formatting
+        if: success() || failure()
+        run: |
+          "$RUNNER_TEMP/run_check.sh" "Elixir formatting" docker compose exec -T phx mix format --check-formatted
+
+      - name: Prettier formatting
+        if: success() || failure()
+        run: |
+          "$RUNNER_TEMP/run_check.sh" "Prettier formatting" yarn run lint:check
+
+      - name: Credo
+        if: success() || failure()
+        run: |
+          "$RUNNER_TEMP/run_check.sh" "Credo" docker compose exec -T phx mix credo
+
+      - name: Sobelow (security)
+        if: success() || failure()
+        run: |
+          "$RUNNER_TEMP/run_check.sh" "Sobelow" docker compose exec -T phx mix sobelow --config
+
+      - name: Tests
+        if: success() || failure()
+        run: |
+          "$RUNNER_TEMP/run_check.sh" "Tests" docker compose exec -T -e EX_CHECK=1 phx mix test
