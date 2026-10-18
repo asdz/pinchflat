@@ -8,9 +8,10 @@ useDefault = true
 [[allowlists]]
 description = "Public dev/test values and fixtures inherited from upstream Pinchflat"
 paths = [
-  '''^config/(dev|test)\.exs$''',
-  '''^priv/grafana/''',
-  '''^test/support/files/''',
+  # Paths may be relative or absolute (eg: /repo/config/dev.exs) depending on how gitleaks is run
+  '''(^|/)config/(dev|test)\.exs$''',
+  '''(^|/)priv/grafana/''',
+  '''(^|/)test/support/files/''',
   '''(^|/)(yarn|mix)\.lock$''',
 ]
 # Upstream's documented fallback SECRET_KEY_BASE in config/runtime.exs (public; set your own via env)
