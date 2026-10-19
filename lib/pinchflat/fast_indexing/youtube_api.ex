@@ -107,9 +107,12 @@ defmodule Pinchflat.FastIndexing.YoutubeApi do
       keys ->
         pid = get_or_start_api_key_agent()
 
+        # The stored index can be past the end of the list if keys were removed in
+        # settings since the last call, so wrap it against the current list.
         current_index =
           Agent.get_and_update(pid, fn current ->
-            {current, rem(current + 1, length(keys))}
+            index = rem(current, length(keys))
+            {index, rem(index + 1, length(keys))}
           end)
 
         key = Enum.at(keys, current_index)

@@ -42,6 +42,24 @@ defmodule Pinchflat.FastIndexing.YoutubeApiTest do
       {:ok, source: source}
     end
 
+    test "still picks a valid key after keys are removed from settings", %{source: source} do
+      expect(HTTPClientMock, :get, fn url, _headers ->
+        assert url =~ "key=key1"
+        {:ok, "{}"}
+      end)
+
+      expect(HTTPClientMock, :get, fn url, _headers ->
+        assert url =~ "key=only_key"
+        {:ok, "{}"}
+      end)
+
+      # Uses key1 and moves the rotation on to key2...
+      YoutubeApi.get_recent_media_ids(source)
+      # ...which no longer exists once the list shrinks to a single key
+      Settings.set(youtube_api_key: "only_key")
+      YoutubeApi.get_recent_media_ids(source)
+    end
+
     test "never logs the full API key", %{source: source} do
       Settings.set(youtube_api_key: "AIzaSecretValue1234")
       expect(HTTPClientMock, :get, fn _url, _headers -> {:ok, "{}"} end)
