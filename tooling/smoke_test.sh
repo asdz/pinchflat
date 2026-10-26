@@ -31,11 +31,15 @@ cleanup() {
   rm -rf "$WORKDIR" 2>/dev/null || true
 }
 trap cleanup EXIT
+# Anything else that aborts the script (eg: an image pull) gets reported too
+trap 'annotate "Smoke test aborted" "line $LINENO: $BASH_COMMAND"' ERR
 
 log() { printf '\n=== %s\n' "$*"; }
 
 start() {
   local image="$1" config="$2"
+  CURRENT_IMAGE="$image"
+  REASON=""
   mkdir -p "$config" "$WORKDIR/downloads"
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   docker run -d --name "$NAME" \
@@ -55,36 +59,68 @@ wait_healthy() {
         return 0
         ;;
       exited/* | dead/* | missing)
-        echo "container stopped ($status)"
+        REASON="container stopped after ${waited}s ($status)"
+        echo "$REASON"
         return 1
         ;;
     esac
     sleep 5
     waited=$((waited + 5))
   done
-  echo "not healthy after ${HEALTH_TIMEOUT}s (last status: $status)"
+  REASON="not healthy after ${HEALTH_TIMEOUT}s (last status: $status)"
+  echo "$REASON"
   return 1
 }
 
+REASON=""
+
 check_running_app() {
-  # The app's own healthcheck endpoint, plus the two binaries downloads depend on
-  docker exec "$NAME" curl -fsS "http://localhost:8945/healthcheck" >/dev/null
-  echo "yt-dlp: $(docker exec "$NAME" yt-dlp --version)"
-  echo "deno:   $(docker exec "$NAME" deno --version | head -1)"
-  echo "ffmpeg: $(docker exec "$NAME" ffmpeg -version | head -1)"
+  # Each check sets REASON so a failure says exactly what broke. (`set -e` doesn't apply
+  # inside a function called from `if`, so every check returns explicitly.)
+  local out
+  docker exec "$NAME" curl -fsS "http://localhost:8945/healthcheck" >/dev/null ||
+    { REASON="healthcheck endpoint failed"; return 1; }
+  # The binaries downloads depend on
+  out="$(docker exec "$NAME" yt-dlp --version 2>&1)" || { REASON="yt-dlp doesn't run: $out"; return 1; }
+  echo "yt-dlp: $out"
+  out="$(docker exec "$NAME" deno --version 2>&1)" || { REASON="deno doesn't run: $out"; return 1; }
+  echo "deno:   $(head -1 <<<"$out")"
+  out="$(docker exec "$NAME" ffmpeg -version 2>&1)" || { REASON="ffmpeg doesn't run: $(head -5 <<<"$out")"; return 1; }
+  echo "ffmpeg: $(head -1 <<<"$out")"
   # Crashes during boot (eg: a bad migration) show up as Elixir errors in the log
-  if docker logs "$NAME" 2>&1 | grep -E '\*\* \(|\[error\].*(Migration|Ecto|exited)' ; then
-    echo "errors found in startup log"
+  out="$(docker logs "$NAME" 2>&1 | grep -E '\*\* \(|\[error\].*(Migration|Ecto|exited)' || true)"
+  if [ -n "$out" ]; then
+    REASON="errors in startup log: $(head -5 <<<"$out")"
     return 1
   fi
 }
 
 stop() { docker stop -t 30 "$NAME" >/dev/null; }
 
+# In GitHub Actions, also raise the failure as an annotation: annotations show on the run's
+# summary page and through the API, so the cause is readable without opening the full log.
+annotate() {
+  [ -n "${GITHUB_ACTIONS:-}" ] || return 0
+  local title="$1" msg="$2"
+  msg="${msg//'%'/'%25'}"
+  msg="${msg//$'\r'/'%0D'}"
+  msg="${msg//$'\n'/'%0A'}"
+  echo "::error title=${title}::${msg}"
+}
+
 fail() {
-  echo "FAILED: $*"
+  local state logs
+  state="$(docker inspect --format 'status={{.State.Status}} exit={{.State.ExitCode}} health={{if .State.Health}}{{.State.Health.Status}}{{end}}' "$NAME" 2>&1 || true)"
+  logs="$(docker logs --tail 80 "$NAME" 2>&1 || true)"
+  echo "FAILED: $* ${REASON:+($REASON)}"
+  echo "container: $state"
   echo "--- last 80 log lines ---"
-  docker logs --tail 80 "$NAME" 2>&1 || true
+  echo "$logs"
+  annotate "Smoke test failed: $*" "${REASON:-no detail}
+image: ${CURRENT_IMAGE:-?}
+container: $state
+--- last 30 log lines ---
+$(tail -30 <<<"$logs")"
   FAILED=1
 }
 

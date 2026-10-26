@@ -153,8 +153,12 @@ jobs:
           tags=()
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             tags+=(-t "$image:${GITHUB_REF_NAME}" -t "$image:stable")
-          else
+          elif [[ "$GITHUB_REF" == refs/heads/master ]]; then
             tags+=(-t "$image:edge")
+          else
+            # Manual runs on other branches only test; they leave edge/stable alone
+            echo "Tested $src on $GITHUB_REF_NAME; not publishing" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           # Retags the already-tested manifest; nothing is rebuilt
           docker buildx imagetools create "${tags[@]}" "$src"
