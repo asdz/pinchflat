@@ -87,8 +87,12 @@ check_running_app() {
   echo "deno:   $(head -1 <<<"$out")"
   out="$(docker exec "$NAME" ffmpeg -version 2>&1)" || { REASON="ffmpeg doesn't run: $(head -5 <<<"$out")"; return 1; }
   echo "ffmpeg: $(head -1 <<<"$out")"
-  # Crashes during boot (eg: a bad migration) show up as Elixir errors in the log
-  out="$(docker logs "$NAME" 2>&1 | grep -E '\*\* \(|\[error\].*(Migration|Ecto|exited)' || true)"
+  # Crashes during boot (eg: a bad migration) show up as Elixir errors in the log.
+  # Ignored: a pooled connection finding the DB busy while the first boot migrates it.
+  # The pool just retries it, and the app is already healthy by the time we get here.
+  out="$(docker logs "$NAME" 2>&1 |
+    grep -E '\*\* \(|\[error\].*(Migration|Ecto|exited)' |
+    grep -vE 'failed to connect: \*\* \(Exqlite\.Error\) database is (locked|busy)' || true)"
   if [ -n "$out" ]; then
     REASON="errors in startup log: $(head -5 <<<"$out")"
     return 1
