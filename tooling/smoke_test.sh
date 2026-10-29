@@ -88,11 +88,15 @@ check_running_app() {
   out="$(docker exec "$NAME" ffmpeg -version 2>&1)" || { REASON="ffmpeg doesn't run: $(head -5 <<<"$out")"; return 1; }
   echo "ffmpeg: $(head -1 <<<"$out")"
   # Crashes during boot (eg: a bad migration) show up as Elixir errors in the log.
-  # Ignored: a pooled connection finding the DB busy while the first boot migrates it.
-  # The pool just retries it, and the app is already healthy by the time we get here.
+  # Ignored:
+  #   - a pooled connection finding the DB busy while the first boot migrates it. The pool
+  #     just retries it, and the app is already healthy by the time we get here.
+  #   - yt-dlp's own exit codes (eg: `yt-dlp --update` rate-limited by GitHub on shared CI
+  #     runners). Pinchflat handles those; they aren't app crashes.
   out="$(docker logs "$NAME" 2>&1 |
     grep -E '\*\* \(|\[error\].*(Migration|Ecto|exited)' |
-    grep -vE 'failed to connect: \*\* \(Exqlite\.Error\) database is (locked|busy)' || true)"
+    grep -vE 'failed to connect: \*\* \(Exqlite\.Error\) database is (locked|busy)' |
+    grep -vF '[command_wrapper]' || true)"
   if [ -n "$out" ]; then
     REASON="errors in startup log: $(head -5 <<<"$out")"
     return 1
