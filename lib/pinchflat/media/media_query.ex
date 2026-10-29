@@ -84,14 +84,16 @@ defmodule Pinchflat.Media.MediaQuery do
   end
 
   # Members-only media is skipped unless the source opts in (ie: you've joined the
-  # channel and set up cookies). Private media can never be downloaded so it's always skipped.
-  # A nil availability means "unknown" and is treated as downloadable.
+  # channel and set up cookies). Media that needs a signed-in account (eg: age-restricted)
+  # is skipped unless the source uses cookies. Private media can never be downloaded so
+  # it's always skipped. A nil availability means "unknown" and is treated as downloadable.
   def availability_allows_download do
     dynamic(
       [mi, source],
       is_nil(mi.availability) or
         (mi.availability != "private" and
-           (mi.availability != "subscriber_only" or source.download_members_only == true))
+           (mi.availability != "subscriber_only" or source.download_members_only == true) and
+           (mi.availability != "needs_auth" or source.cookie_behaviour != :disabled))
     )
   end
 

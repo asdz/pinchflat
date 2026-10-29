@@ -424,6 +424,23 @@ defmodule Pinchflat.MediaTest do
       assert Media.list_pending_media_items_for(source) == [members]
     end
 
+    test "skips media that needs sign-in (eg: age-restricted) unless the source uses cookies" do
+      source = source_fixture(%{cookie_behaviour: :disabled})
+      _age_restricted = media_item_fixture(%{source_id: source.id, media_filepath: nil, availability: "needs_auth"})
+      public = media_item_fixture(%{source_id: source.id, media_filepath: nil, availability: "public"})
+
+      assert Media.list_pending_media_items_for(source) == [public]
+    end
+
+    test "includes media that needs sign-in when the source uses cookies" do
+      for behaviour <- [:when_needed, :all_operations] do
+        source = source_fixture(%{cookie_behaviour: behaviour})
+        age_restricted = media_item_fixture(%{source_id: source.id, media_filepath: nil, availability: "needs_auth"})
+
+        assert Media.list_pending_media_items_for(source) == [age_restricted]
+      end
+    end
+
     test "always skips private media" do
       source = source_fixture(%{download_members_only: true})
       _private = media_item_fixture(%{source_id: source.id, media_filepath: nil, availability: "private"})

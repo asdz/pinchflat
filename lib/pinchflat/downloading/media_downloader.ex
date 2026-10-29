@@ -228,6 +228,9 @@ defmodule Pinchflat.Downloading.MediaDownloader do
     cond do
       members_only_error?(message) -> "subscriber_only"
       String.contains?(to_string(message), "Private video") -> "private"
+      # yt-dlp's name for media that needs a signed-in account, which is what age-restricted
+      # media is. Not the "confirm you're not a bot" check: that's temporary rate limiting.
+      String.contains?(to_string(message), age_restricted_errors()) -> "needs_auth"
       true -> nil
     end
   end
@@ -249,6 +252,16 @@ defmodule Pinchflat.Downloading.MediaDownloader do
       "This video is available to this channel's members",
       "members-only content",
       "Join this channel to get access"
+    ]
+  end
+
+  @doc """
+  Known YouTube error messages for age-restricted media, which needs cookies to download.
+  """
+  def age_restricted_errors do
+    [
+      "Sign in to confirm your age",
+      "This video may be inappropriate for some users"
     ]
   end
 end

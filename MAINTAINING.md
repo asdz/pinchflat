@@ -11,6 +11,10 @@ Docker image. See `git log upstream/master..master` for the full list.
   unless the source's new **Download Members-Only Media** setting is on (turn it on once you've
   joined the channel and set up cookies). Private videos are always skipped. Videos that already
   failed with a members-only error are marked automatically when the database migrates.
+- **Age-restricted videos are skipped unless the source uses cookies.** Without cookies they
+  can never download, but they used to be retried on every index, holding up the download
+  queue. They're marked `needs_auth` and picked up again as soon as the source's Cookie
+  Behaviour is set to anything other than Disabled. Already-failed ones are marked on migration.
 - **Fast indexing no longer re-requests unavailable videos on every run**, and YouTube's newer
   "Join this channel…" error wording is recognised.
 - **Indexing and source-metadata jobs no longer crash on bad yt-dlp output** (upstream #899).

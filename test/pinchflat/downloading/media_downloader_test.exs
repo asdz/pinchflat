@@ -238,6 +238,24 @@ defmodule Pinchflat.Downloading.MediaDownloaderTest do
       assert Repo.reload(media_item).availability == "private"
     end
 
+    test "marks age-restricted media as needing sign-in", %{media_item: media_item} do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_downloadable_status, _opts, _ot, _addl ->
+        {:error, "ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate", 1}
+      end)
+
+      assert {:error, :download_failed, _} = MediaDownloader.download_for_media_item(media_item)
+      assert Repo.reload(media_item).availability == "needs_auth"
+    end
+
+    test "doesn't treat the bot check as age-restricted", %{media_item: media_item} do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_downloadable_status, _opts, _ot, _addl ->
+        {:error, "ERROR: [youtube] abc: Sign in to confirm you're not a bot", 1}
+      end)
+
+      assert {:error, :download_failed, _} = MediaDownloader.download_for_media_item(media_item)
+      assert Repo.reload(media_item).availability == nil
+    end
+
     test "leaves availability alone for other errors", %{media_item: media_item} do
       expect(YtDlpRunnerMock, :run, 2, fn
         _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, "{}"}

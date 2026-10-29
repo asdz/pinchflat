@@ -620,6 +620,23 @@ defmodule Pinchflat.SourcesTest do
       assert_enqueued(worker: MediaDownloadWorker, args: %{"id" => media_item.id})
     end
 
+    test "turning on cookies schedules downloads for media that needed them" do
+      source = source_fixture(download_media: true, enabled: true, cookie_behaviour: :disabled)
+      media_item = media_item_fixture(source_id: source.id, media_filepath: nil, availability: "needs_auth")
+
+      refute_enqueued(worker: MediaDownloadWorker)
+      assert {:ok, %Source{}} = Sources.update_source(source, %{cookie_behaviour: :when_needed})
+      assert_enqueued(worker: MediaDownloadWorker, args: %{"id" => media_item.id})
+    end
+
+    test "turning off cookies doesn't schedule downloads" do
+      source = source_fixture(download_media: true, enabled: true, cookie_behaviour: :when_needed)
+      _media_item = media_item_fixture(source_id: source.id, media_filepath: nil)
+
+      assert {:ok, %Source{}} = Sources.update_source(source, %{cookie_behaviour: :disabled})
+      refute_enqueued(worker: MediaDownloadWorker)
+    end
+
     test "enabling a source will not schedule a download task if download_media is false" do
       source = source_fixture(download_media: false, enabled: false)
       _media_item = media_item_fixture(source_id: source.id, media_filepath: nil)

@@ -304,6 +304,10 @@ defmodule Pinchflat.Sources do
       {%{download_members_only: true}, %{enabled: true, download_media: true}} ->
         DownloadingHelpers.enqueue_pending_download_tasks(source)
 
+      # Age-restricted media just became downloadable (ie: cookies were turned on)
+      {%{cookie_behaviour: behaviour}, %{enabled: true, download_media: true}} when behaviour != :disabled ->
+        DownloadingHelpers.enqueue_pending_download_tasks(source)
+
       _ ->
         nil
     end
