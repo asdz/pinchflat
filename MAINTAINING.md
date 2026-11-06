@@ -15,6 +15,11 @@ Docker image. See `git log upstream/master..master` for the full list.
   can never download, but they used to be retried on every index, holding up the download
   queue. They're marked `needs_auth` and picked up again as soon as the source's Cookie
   Behaviour is set to anything other than Disabled. Already-failed ones are marked on migration.
+- **The daily retention job no longer crashes the app on large libraries.** It used to scan every
+  downloaded video in one query; on a big library on NAS disks that took longer than the 15s
+  database timeout, and the timed-out query took the whole app down with it (a restart every
+  day at 01:00 UTC). It now only checks sources that have a retention period or cutoff date, one
+  at a time. The database timeout is also raised to 60s, adjustable with `DATABASE_TIMEOUT_MS`.
 - **Fast indexing no longer re-requests unavailable videos on every run**, and YouTube's newer
   "Join this channel…" error wording is recognised.
 - **Indexing and source-metadata jobs no longer crash on bad yt-dlp output** (upstream #899).

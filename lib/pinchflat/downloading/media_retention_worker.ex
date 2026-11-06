@@ -12,6 +12,14 @@ defmodule Pinchflat.Downloading.MediaRetentionWorker do
 
   alias Pinchflat.Repo
   alias Pinchflat.Media
+  alias Pinchflat.Sources.Source
+
+  # Both queries below used to scan every downloaded media item in one go. On large libraries
+  # that takes longer than the database's query timeout, and a timed-out query takes the whole
+  # app down with it. So: only look at sources that actually have a retention period or cutoff
+  # date, query them one at a time (which uses the source_id index), and allow those queries
+  # longer than usual since this is a background job.
+  @query_timeout :timer.minutes(10)
 
   @doc """
   Deletes media items that are past their retention date and prevents
@@ -31,10 +39,9 @@ defmodule Pinchflat.Downloading.MediaRetentionWorker do
 
   defp cull_cullable_media_items do
     cullable_media =
-      MediaQuery.new()
-      |> MediaQuery.require_assoc(:source)
-      |> where(^MediaQuery.cullable())
-      |> Repo.all()
+      dynamic([s], fragment("IFNULL(?, 0) > 0", s.retention_period_days))
+      |> source_ids_where()
+      |> media_for_sources(MediaQuery.cullable())
 
     Logger.info("Culling #{length(cullable_media)} media items past their retention date")
 
@@ -53,10 +60,9 @@ defmodule Pinchflat.Downloading.MediaRetentionWorker do
   # comparison like we can with retention periods. We can only compare to the day.
   defp delete_media_items_from_before_cutoff do
     deletable_media =
-      MediaQuery.new()
-      |> MediaQuery.require_assoc(:source)
-      |> where(^MediaQuery.deletable_based_on_source_cutoff())
-      |> Repo.all()
+      dynamic([s], not is_nil(s.download_cutoff_date))
+      |> source_ids_where()
+      |> media_for_sources(MediaQuery.deletable_based_on_source_cutoff())
 
     Logger.info("Deleting #{length(deletable_media)} media items that are from before the source cutoff")
 
@@ -70,6 +76,20 @@ defmodule Pinchflat.Downloading.MediaRetentionWorker do
       Media.delete_media_files(media_item, %{
         culled_at: DateTime.utc_now()
       })
+    end)
+  end
+
+  defp source_ids_where(condition) do
+    Repo.all(from(s in Source, where: ^condition, select: s.id))
+  end
+
+  defp media_for_sources(source_ids, condition) do
+    Enum.flat_map(source_ids, fn source_id ->
+      MediaQuery.new()
+      |> MediaQuery.require_assoc(:source)
+      |> where(^MediaQuery.for_source(source_id))
+      |> where(^condition)
+      |> Repo.all(timeout: @query_timeout)
     end)
   end
 end

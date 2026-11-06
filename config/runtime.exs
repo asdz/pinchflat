@@ -88,6 +88,14 @@ if config_env() == :prod do
   base_route_path = System.get_env("BASE_ROUTE_PATH", "/")
   enable_ipv6 = String.length(System.get_env("ENABLE_IPV6", "")) > 0
   enable_prometheus = String.length(System.get_env("ENABLE_PROMETHEUS", "")) > 0
+  # How long one database query may run before it's abandoned. Ecto's default of 15s is too
+  # short for large libraries on slow (eg: NAS) disks, and an abandoned SQLite query can take
+  # the whole app down with it. Values below 15000 are ignored.
+  database_timeout_ms =
+    case Integer.parse(System.get_env("DATABASE_TIMEOUT_MS", "")) do
+      {ms, ""} when ms >= 15_000 -> ms
+      _ -> 60_000
+    end
 
   config :logger, level: String.to_existing_atom(System.get_env("LOG_LEVEL", "debug"))
 
@@ -109,7 +117,8 @@ if config_env() == :prod do
 
   config :pinchflat, Pinchflat.Repo,
     database: db_path,
-    journal_mode: journal_mode
+    journal_mode: journal_mode,
+    timeout: database_timeout_ms
 
   config :pinchflat, Pinchflat.PromEx, disabled: !enable_prometheus
 

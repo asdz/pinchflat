@@ -35,6 +35,19 @@ defmodule Pinchflat.Downloading.MediaRetentionWorkerTest do
   end
 
   describe "perform/1 when testing retention_period-based culling" do
+    test "culls media from every source that has a retention period, and only those" do
+      {_, old_a, new_a} = prepare_records_for_retention_date()
+      {_, old_b, _} = prepare_records_for_retention_date(1)
+      {_, kept_c, _} = prepare_records_for_retention_date(nil)
+
+      perform_job(MediaRetentionWorker, %{})
+
+      refute Repo.reload!(old_a).media_filepath
+      refute Repo.reload!(old_b).media_filepath
+      assert Repo.reload!(new_a).media_filepath
+      assert Repo.reload!(kept_c).media_filepath
+    end
+
     test "deletes media files that are past their retention date" do
       {_source, old_media_item, new_media_item} = prepare_records_for_retention_date()
 
@@ -112,6 +125,19 @@ defmodule Pinchflat.Downloading.MediaRetentionWorkerTest do
   end
 
   describe "perform/1 when testing source cutoff-based culling" do
+    test "culls media from every source that has a cutoff date, and only those" do
+      {_, old_a, new_a} = prepare_records_for_source_cutoff_date()
+      {_, old_b, _} = prepare_records_for_source_cutoff_date(2)
+      {_, kept_c, _} = prepare_records_for_source_cutoff_date(nil)
+
+      perform_job(MediaRetentionWorker, %{})
+
+      refute Repo.reload!(old_a).media_filepath
+      refute Repo.reload!(old_b).media_filepath
+      assert Repo.reload!(new_a).media_filepath
+      assert Repo.reload!(kept_c).media_filepath
+    end
+
     test "culls media from before the cutoff date" do
       {_source, old_media_item, new_media_item} = prepare_records_for_source_cutoff_date()
 
