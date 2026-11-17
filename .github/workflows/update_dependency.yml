@@ -53,8 +53,13 @@ jobs:
           fi
 
           cp mix.lock "$RUNNER_TEMP/mix.lock.before"
+          # Unlock + get rather than `mix deps.update`: it also works for packages that are only
+          # pulled in by other packages (eg: exqlite, via ecto_sqlite3), and it leaves every
+          # other package at its locked version instead of updating the named package's own
+          # dependencies too.
           # shellcheck disable=SC2086 # word splitting is wanted: one argument per package
-          mix deps.update $PACKAGES
+          mix deps.unlock $PACKAGES
+          mix deps.get
           diff -U0 --label mix.lock --label mix.lock "$RUNNER_TEMP/mix.lock.before" mix.lock > "$RUNNER_TEMP/lock.diff" || true
 
           if [ ! -s "$RUNNER_TEMP/lock.diff" ]; then
