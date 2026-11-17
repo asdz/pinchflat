@@ -68,6 +68,10 @@ jobs:
             exit 0
           fi
 
+          echo "----- mix.lock diff -----"
+          cat "$RUNNER_TEMP/lock.diff"
+          echo "----- end of diff -----"
+
           {
             echo "### mix.lock after updating \`$PACKAGES\`"
             echo
@@ -81,9 +85,12 @@ jobs:
           # Also post the diff as annotations so it can be fetched through the API.
           # gzip + base64 keeps it intact; `base64 -d | gunzip` (parts joined in order) restores it.
           gzip -9c "$RUNNER_TEMP/lock.diff" | base64 -w0 | fold -w 3000 > "$RUNNER_TEMP/lock.diff.parts"
-          total="$(wc -l < "$RUNNER_TEMP/lock.diff.parts")"
+          # base64 -w0 doesn't end its output with a newline; add one so the last part is read
+          echo >> "$RUNNER_TEMP/lock.diff.parts"
+          total="$(grep -c . "$RUNNER_TEMP/lock.diff.parts")"
           part=0
           while IFS= read -r chunk; do
+            [ -n "$chunk" ] || continue
             part=$((part + 1))
             echo "::notice title=mix.lock diff part $(printf '%02d' "$part") of $(printf '%02d' "$total")::$chunk"
           done < "$RUNNER_TEMP/lock.diff.parts"
