@@ -39,6 +39,29 @@ defmodule Pinchflat.Downloading.DownloadingHelpersTest do
       assert [_] = Tasks.list_tasks_for(media_item)
     end
 
+    test "does not enqueue a second job for media that already has one queued" do
+      source = source_fixture()
+      media_item = media_item_fixture(source_id: source.id, media_filepath: nil)
+
+      assert :ok = DownloadingHelpers.enqueue_pending_download_tasks(source)
+      assert :ok = DownloadingHelpers.enqueue_pending_download_tasks(source)
+
+      assert [_] = all_enqueued(worker: MediaDownloadWorker)
+      assert [_] = Tasks.list_tasks_for(media_item)
+    end
+
+    test "enqueues a new job once the previous one is no longer active" do
+      source = source_fixture()
+      media_item = media_item_fixture(source_id: source.id, media_filepath: nil)
+
+      assert :ok = DownloadingHelpers.enqueue_pending_download_tasks(source)
+      Repo.update_all(Oban.Job, set: [state: "discarded"])
+      assert :ok = DownloadingHelpers.enqueue_pending_download_tasks(source)
+
+      assert [_] = all_enqueued(worker: MediaDownloadWorker)
+      assert [_, _] = Tasks.list_tasks_for(media_item)
+    end
+
     test "does not create a job if the source is set to not download" do
       source = source_fixture(download_media: false)
 

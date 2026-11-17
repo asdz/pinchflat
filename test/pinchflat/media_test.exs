@@ -9,6 +9,7 @@ defmodule Pinchflat.MediaTest do
   alias Pinchflat.Media
   alias Pinchflat.Media.MediaItem
   alias Pinchflat.Metadata.MetadataFileHelpers
+  alias Pinchflat.Downloading.MediaDownloadWorker
 
   alias Pinchflat.YtDlp.Media, as: YtDlpMedia
 
@@ -151,6 +152,18 @@ defmodule Pinchflat.MediaTest do
       assert Media.list_upgradeable_media_items() == []
     end
 
+    test "returns media from every source whose profile has a redownload delay, and only those", %{source: source} do
+      other_source = source_fixture(%{media_profile_id: media_profile_fixture(%{redownload_delay_days: 4}).id})
+      no_delay_source = source_fixture(%{media_profile_id: media_profile_fixture(%{redownload_delay_days: 0}).id})
+      attrs = %{uploaded_at: now_minus(6, :days), media_downloaded_at: now_minus(5, :days)}
+
+      first = media_item_fixture(Map.put(attrs, :source_id, source.id))
+      second = media_item_fixture(Map.put(attrs, :source_id, other_source.id))
+      _not_upgradeable = media_item_fixture(Map.put(attrs, :source_id, no_delay_source.id))
+
+      assert Media.list_upgradeable_media_items() == [first, second]
+    end
+
     test "does not return media items without a redownload delay" do
       media_profile = media_profile_fixture(%{redownload_delay_days: nil})
       source = source_fixture(%{media_profile_id: media_profile.id})
@@ -186,6 +199,48 @@ defmodule Pinchflat.MediaTest do
         })
 
       assert Media.list_pending_media_items_for(source) == []
+    end
+  end
+
+  describe "list_pending_media_items_for/2" do
+    test "can load only the requested fields" do
+      source = source_fixture()
+      media_item = media_item_fixture(%{source_id: source.id, media_filepath: nil})
+
+      assert [%MediaItem{} = found] = Media.list_pending_media_items_for(source, fields: [:id])
+      assert found.id == media_item.id
+      assert found.title == nil
+    end
+
+    test "can leave out media that already has a queued job for a worker" do
+      source = source_fixture()
+      queued = media_item_fixture(%{source_id: source.id, media_filepath: nil})
+      not_queued = media_item_fixture(%{source_id: source.id, media_filepath: nil})
+      {:ok, _task} = MediaDownloadWorker.kickoff_with_task(queued)
+
+      assert [found] = Media.list_pending_media_items_for(source, without_active_job_for: MediaDownloadWorker)
+      assert found.id == not_queued.id
+    end
+
+    test "still returns media whose job for that worker is no longer active" do
+      source = source_fixture()
+      media_item = media_item_fixture(%{source_id: source.id, media_filepath: nil})
+      {:ok, task} = MediaDownloadWorker.kickoff_with_task(media_item)
+
+      from(Oban.Job, where: [id: ^task.job_id], update: [set: [state: "discarded"]])
+      |> Repo.update_all([])
+
+      assert [found] = Media.list_pending_media_items_for(source, without_active_job_for: MediaDownloadWorker)
+      assert found.id == media_item.id
+    end
+
+    test "still returns media that only has a queued job for a different worker" do
+      source = source_fixture()
+      media_item = media_item_fixture(%{source_id: source.id, media_filepath: nil})
+      _other_workers_task = task_fixture(media_item_id: media_item.id)
+
+      assert [found] = Media.list_pending_media_items_for(source, without_active_job_for: MediaDownloadWorker)
+      assert found.id == media_item.id
     end
   end
 

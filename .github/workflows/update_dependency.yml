@@ -1,0 +1,84 @@
+name: Preview a dependency update
+
+# Works out what mix.lock would look like after updating one or more Hex packages, so a
+# dependency can be bumped without having Elixir installed anywhere.
+#
+# Nothing is committed or published. The lock-file change is shown on the run's summary
+# page as a diff. Apply that diff to mix.lock and push it like any other change: it then
+# goes through the full test suite and the image smoke test before reaching `edge`.
+#
+# Run it from the Actions tab ("Run workflow") or with:
+#   gh workflow run update_dependency.yml -f packages="exqlite"
+
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: 'Hex packages to update, space separated (eg: exqlite ecto_sqlite3)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    name: Resolve updated versions
+    runs-on: ubuntu-latest
+    # Same Elixir/OTP as docker/selfhosted.Dockerfile so the lock file is resolved identically
+    container: hexpm/elixir:1.18.4-erlang-27.2.4-debian-bookworm-20250428-slim
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          # git is needed for the one dependency that's fetched from GitHub rather than Hex
+          apt-get update -y >/dev/null
+          apt-get install -y --no-install-recommends git ca-certificates >/dev/null
+          mix local.hex --force >/dev/null
+          mix local.rebar --force >/dev/null
+
+      - name: Update the lock file
+        env:
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          set -euo pipefail
+          # Package names only. This also keeps the input from being used to run anything else
+          if ! [[ "$PACKAGES" =~ ^[a-z0-9_]+(\ [a-z0-9_]+)*$ ]]; then
+            echo "::error title=Invalid input::Expected Hex package names separated by single spaces"
+            exit 1
+          fi
+
+          cp mix.lock "$RUNNER_TEMP/mix.lock.before"
+          # shellcheck disable=SC2086 # word splitting is wanted: one argument per package
+          mix deps.update $PACKAGES
+          diff -U0 --label mix.lock --label mix.lock "$RUNNER_TEMP/mix.lock.before" mix.lock > "$RUNNER_TEMP/lock.diff" || true
+
+          if [ ! -s "$RUNNER_TEMP/lock.diff" ]; then
+            echo "::notice title=Nothing to update::mix.lock already has the newest allowed versions of: $PACKAGES"
+            echo "mix.lock already has the newest allowed versions of: \`$PACKAGES\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "### mix.lock after updating \`$PACKAGES\`"
+            echo
+            echo "Apply with \`patch mix.lock <file>\`, then push."
+            echo
+            echo '```diff'
+            cat "$RUNNER_TEMP/lock.diff"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Also post the diff as annotations so it can be fetched through the API.
+          # gzip + base64 keeps it intact; `base64 -d | gunzip` (parts joined in order) restores it.
+          gzip -9c "$RUNNER_TEMP/lock.diff" | base64 -w0 | fold -w 3000 > "$RUNNER_TEMP/lock.diff.parts"
+          total="$(wc -l < "$RUNNER_TEMP/lock.diff.parts")"
+          part=0
+          while IFS= read -r chunk; do
+            part=$((part + 1))
+            echo "::notice title=mix.lock diff part $(printf '%02d' "$part") of $(printf '%02d' "$total")::$chunk"
+          done < "$RUNNER_TEMP/lock.diff.parts"

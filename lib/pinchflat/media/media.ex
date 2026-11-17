@@ -17,6 +17,10 @@ defmodule Pinchflat.Media do
 
   # Some fields should only be set on insert and not on update.
   @fields_to_drop_on_update [:playlist_index]
+  # For queries run by background jobs that walk a whole source. Nothing is waiting on them,
+  # so they get far longer than the default before being abandoned.
+  @background_query_timeout :timer.minutes(10)
+  @active_job_states ~w(available scheduled retryable executing)
 
   @doc """
   Returns the list of media_items.
@@ -45,10 +49,25 @@ defmodule Pinchflat.Media do
   Returns [%MediaItem{}, ...]
   """
   def list_upgradeable_media_items do
-    MediaQuery.new()
-    |> MediaQuery.require_assoc(:media_profile)
-    |> where(^MediaQuery.upgradeable())
-    |> Repo.all()
+    # One query per source that can actually have upgradeable media, rather than one scan of
+    # the whole library: profiles without a redownload delay (the default) are skipped
+    # entirely, and each query only reads its own source's rows.
+    upgradeable_source_ids =
+      Repo.all(
+        from(s in Source,
+          join: mp in assoc(s, :media_profile),
+          where: fragment("IFNULL(?, 0) > 0", mp.redownload_delay_days),
+          order_by: s.id,
+          select: s.id
+        )
+      )
+
+    Enum.flat_map(upgradeable_source_ids, fn source_id ->
+      MediaQuery.new()
+      |> MediaQuery.require_assoc(:media_profile)
+      |> where(^dynamic(^MediaQuery.for_source(source_id) and ^MediaQuery.upgradeable()))
+      |> Repo.all(timeout: @background_query_timeout)
+    end)
   end
 
   @doc """
@@ -57,12 +76,20 @@ defmodule Pinchflat.Media do
   should really check out that function if you need to know more
   because it has a lot going on.
 
+  Options:
+    - `:fields` - only load these fields (eg: `[:id]`). Pending lists can be thousands of
+      rows long and callers that just enqueue jobs don't need titles, descriptions, etc.
+    - `:without_active_job_for` - a worker module. Leaves out media items that already have
+      a queued or running job for that worker.
+
   Returns [%MediaItem{}, ...].
   """
-  def list_pending_media_items_for(%Source{} = source) do
-    MediaQuery.new()
+  def list_pending_media_items_for(%Source{} = source, opts \\ []) do
+    from(mi in MediaItem, as: :media_item)
     |> MediaQuery.require_assoc(:media_profile)
     |> where(^dynamic(^MediaQuery.for_source(source) and ^MediaQuery.pending()))
+    |> maybe_exclude_media_with_active_job(Keyword.get(opts, :without_active_job_for))
+    |> maybe_select_fields(Keyword.get(opts, :fields))
     |> Repo.all()
   end
 
@@ -210,6 +237,28 @@ defmodule Pinchflat.Media do
   """
   def change_media_item(%MediaItem{} = media_item, attrs \\ %{}) do
     MediaItem.changeset(media_item, attrs)
+  end
+
+  defp maybe_select_fields(query, nil), do: query
+  defp maybe_select_fields(query, fields), do: select(query, [mi], struct(mi, ^fields))
+
+  defp maybe_exclude_media_with_active_job(query, nil), do: query
+
+  defp maybe_exclude_media_with_active_job(query, worker) do
+    worker_name = Oban.Worker.to_string(worker)
+
+    where(
+      query,
+      [mi],
+      not exists(
+        from(t in Tasks.Task,
+          join: j in assoc(t, :job),
+          where: t.media_item_id == parent_as(:media_item).id,
+          where: j.worker == ^worker_name and j.state in ^@active_job_states,
+          select: 1
+        )
+      )
+    )
   end
 
   defp do_delete_media_files(media_item) do

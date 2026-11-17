@@ -30,8 +30,11 @@ defmodule Pinchflat.Downloading.DownloadingHelpers do
   def enqueue_pending_download_tasks(source, job_opts \\ [])
 
   def enqueue_pending_download_tasks(%Source{download_media: true} = source, job_opts) do
+    # This runs after every index of every source (every few minutes with fast indexing), so
+    # it's kept cheap: only IDs are loaded, and media that already has a download queued or
+    # running is filtered out by the database instead of being rejected one job at a time.
     source
-    |> Media.list_pending_media_items_for()
+    |> Media.list_pending_media_items_for(fields: [:id], without_active_job_for: MediaDownloadWorker)
     |> Enum.each(&MediaDownloadWorker.kickoff_with_task(&1, %{}, job_opts))
   end
 
@@ -46,7 +49,7 @@ defmodule Pinchflat.Downloading.DownloadingHelpers do
   """
   def dequeue_pending_download_tasks(%Source{} = source) do
     source
-    |> Media.list_pending_media_items_for()
+    |> Media.list_pending_media_items_for(fields: [:id])
     |> Enum.each(&Tasks.delete_pending_tasks_for/1)
   end
 

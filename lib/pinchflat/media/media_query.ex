@@ -31,6 +31,9 @@ defmodule Pinchflat.Media.MediaQuery do
   def for_source(source), do: dynamic([mi], mi.source_id == ^source.id)
 
   def downloaded, do: dynamic([mi], not is_nil(mi.media_filepath))
+  # Deliberately not `not (^downloaded())`: SQLite can only use an index for the plain
+  # `IS NULL` form, which is what lets "what's left to download?" skip every downloaded row.
+  def not_downloaded, do: dynamic([mi], is_nil(mi.media_filepath))
   def download_prevented, do: dynamic([mi], mi.prevent_download == true)
   def culling_prevented, do: dynamic([mi], mi.prevent_culling == true)
   def redownloaded, do: dynamic([mi], not is_nil(mi.media_redownloaded_at))
@@ -141,7 +144,7 @@ defmodule Pinchflat.Media.MediaQuery do
   def pending do
     dynamic(
       [mi],
-      not (^downloaded()) and
+      ^not_downloaded() and
         not (^download_prevented()) and
         ^upload_date_after_source_cutoff() and
         ^format_matching_profile_preference() and
