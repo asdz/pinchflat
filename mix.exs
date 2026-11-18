@@ -52,6 +52,9 @@ defmodule Pinchflat.MixProject do
       {:ecto, "~> 3.12.3"},
       {:ecto_sql, "~> 3.12"},
       {:ecto_sqlite3, ">= 0.0.0"},
+      # Not called directly (ecto_sqlite3 brings it in). Listed to enforce a minimum version:
+      # older ones can crash the whole VM when a query outlives its timeout. See MAINTAINING.md.
+      {:exqlite, ">= 0.37.0"},
       {:ecto_sqlite3_extras, "~> 1.2.0"},
       {:phoenix_html, "~> 4.2"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},

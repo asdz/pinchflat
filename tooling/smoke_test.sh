@@ -12,19 +12,21 @@
 #                     (this is what happens when an existing install updates)
 #   3. Rollback:      previous image starts again on the DB the new image migrated
 #                     (this is what happens if you revert after a bad update)
-#   4. Slow query:    a database query that runs past its timeout only fails that one
-#                     query. It must not take the whole app down
+#   4. Slow queries:  database queries that run past their timeout are cancelled and only
+#                     fail themselves. They must not take the whole app down
 #
 # Needs: docker, curl, sqlite3. Uses throwaway folders; never touches real data.
 #
-# Set SLOW_QUERY_CHECK=warn to report a failed check 4 without failing the run.
+# Set SLOW_QUERY_COMPARE=1 to also run check 4 against the previous image. That's for
+# comparison only: the result is reported and never fails the run.
 
 set -euo pipefail
 
 NEW_IMAGE="${1:?Usage: $0 <new-image> [<previous-image>]}"
 OLD_IMAGE="${2:-ghcr.io/kieraneglin/pinchflat:latest}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-240}"
-SLOW_QUERY_CHECK="${SLOW_QUERY_CHECK:-fail}"
+SLOW_QUERY_ROUNDS="${SLOW_QUERY_ROUNDS:-20}"
+SLOW_QUERY_COMPARE="${SLOW_QUERY_COMPARE:-}"
 WORKDIR="$(mktemp -d)"
 NAME="pinchflat-smoke-$$"
 FAILED=0
@@ -109,51 +111,73 @@ check_running_app() {
 }
 
 # On large libraries and slow disks a query can outlive its timeout. The database driver
-# then closes that connection while the query is still running. Older driver versions
-# (exqlite < 0.37) crashed the whole Erlang VM when the abandoned query finally finished,
-# which showed up as the container restarting for no logged reason. So: run a query that
-# takes far longer than its timeout, give it time to finish, and make sure the app is still
-# there and still able to use its database.
+# then closes that connection while the query is still running on it. With older driver
+# versions (exqlite < 0.37) the query carried on regardless, and when it finished there was a
+# chance of it touching the closed connection and crashing the whole Erlang VM. Nothing was
+# logged; the container just restarted. Newer versions cancel the query first.
+#
+# So: run queries that need seconds but are only allowed 300ms, alternating between one that
+# returns a single row at the very end and one that returns rows throughout. Then make sure
+# every one of them was cancelled, and that the app and its database are still there.
+#
+# Sets SLOW_QUERY_RESULT (what happened) and, on failure, REASON.
 check_slow_query_survival() {
-  local out status
-  # Counting to 150 million takes SQLite tens of seconds; the timeout is 1 second.
-  out="$(timeout 300 docker exec "$NAME" /app/bin/pinchflat rpc '
-    sql = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 150000000) SELECT count(*) FROM c"
+  local out status abandoned
+  SLOW_QUERY_RESULT=""
+  out="$(timeout 600 docker exec "$NAME" /app/bin/pinchflat rpc '
+    numbers = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 10000000)"
+    one_row_at_the_end = numbers <> " SELECT count(*) FROM c"
+    rows_throughout = numbers <> " SELECT x FROM c WHERE x % 50000 = 0"
     started = System.monotonic_time(:millisecond)
 
-    outcome =
-      try do
-        case Ecto.Adapters.SQL.query(Pinchflat.Repo, sql, [], timeout: 1_000, log: false) do
-          {:ok, _} -> "finished"
-          {:error, _} -> "was abandoned"
-        end
-      rescue
-        _ -> "raised"
-      catch
-        _, _ -> "exited"
+    outcomes =
+      for round <- 1..'"$SLOW_QUERY_ROUNDS"' do
+        sql = if rem(round, 2) == 0, do: one_row_at_the_end, else: rows_throughout
+
+        outcome =
+          try do
+            case Ecto.Adapters.SQL.query(Pinchflat.Repo, sql, [], timeout: 300, log: false) do
+              {:ok, _} -> :completed
+              {:error, _} -> :cancelled
+            end
+          rescue
+            _ -> :cancelled
+          catch
+            _, _ -> :cancelled
+          end
+
+        # Gives the pool a moment to replace the connection that was just closed
+        Process.sleep(250)
+        outcome
       end
 
-    IO.puts("slow query #{outcome} after #{System.monotonic_time(:millisecond) - started}ms")
+    cancelled = Enum.count(outcomes, &(&1 == :cancelled))
+    elapsed = System.monotonic_time(:millisecond) - started
+    IO.puts("slow queries: #{cancelled} of #{length(outcomes)} cancelled at their timeout, in #{elapsed}ms")
   ' 2>&1)" || true
   echo "$out"
-  SLOW_QUERY_RESULT="$(grep '^slow query ' <<<"$out" | tail -1 || true)"
+  SLOW_QUERY_RESULT="$(grep '^slow queries: ' <<<"$out" | tail -1 || true)"
 
-  # Old drivers crash when the abandoned query completes, which can be a little after the
-  # command above returns. Give it a moment, then look.
-  sleep 30
+  # A crash can land slightly after the last query returns. Give it a moment, then look.
+  sleep 10
   status="$(docker inspect --format '{{.State.Status}}' "$NAME" 2>/dev/null || echo missing)"
-  [ "$status" = "running" ] ||
-    { REASON="${SLOW_QUERY_RESULT:-slow query never returned}, and the app died (container $status)"; return 1; }
+  if [ "$status" != "running" ]; then
+    REASON="the app died while running queries that outlive their timeout (container $status)"
+    SLOW_QUERY_RESULT="$REASON"
+    return 1
+  fi
   [ -n "$SLOW_QUERY_RESULT" ] ||
-    { REASON="couldn't run the slow query inside the container: $(tail -3 <<<"$out")"; return 1; }
+    { REASON="couldn't run the slow queries inside the container: $(tail -3 <<<"$out")"; return 1; }
   docker exec "$NAME" curl -fsS "http://localhost:8945/healthcheck" >/dev/null ||
     { REASON="$SLOW_QUERY_RESULT, then the healthcheck stopped answering"; return 1; }
   out="$(timeout 60 docker exec "$NAME" /app/bin/pinchflat rpc \
     'IO.puts("db ok: #{inspect(Pinchflat.Repo.query!("SELECT 1").rows)}")' 2>&1)" || true
   grep -q '^db ok: ' <<<"$out" ||
     { REASON="$SLOW_QUERY_RESULT, then the database stopped answering: $(tail -3 <<<"$out")"; return 1; }
-  echo "$SLOW_QUERY_RESULT; app and database still fine afterwards"
-  annotate "Slow query check passed" "$SLOW_QUERY_RESULT; app and database still fine afterwards ($CURRENT_IMAGE)" notice
+  SLOW_QUERY_RESULT="$SLOW_QUERY_RESULT; app and database fine afterwards"
+  abandoned="$(sed -E 's/^slow queries: ([0-9]+) of ([0-9]+) .*/\1 \2/' <<<"$SLOW_QUERY_RESULT")"
+  [ "${abandoned% *}" = "${abandoned#* }" ] ||
+    { REASON="$SLOW_QUERY_RESULT, but queries that outlive their timeout should all be cancelled"; return 1; }
 }
 
 stop() { docker stop -t 30 "$NAME" >/dev/null; }
@@ -231,18 +255,30 @@ if [ "$FAILED" -eq 0 ]; then
 fi
 
 if [ "$FAILED" -eq 0 ]; then
-  log "4/4 Slow query: $NEW_IMAGE must survive a query that outlives its timeout"
+  log "4/4 Slow queries: $NEW_IMAGE must cancel and survive queries that outlive their timeout"
   start "$NEW_IMAGE" "$WORKDIR/fresh"
   if wait_healthy && check_slow_query_survival; then
+    echo "$SLOW_QUERY_RESULT"
+    annotate "Slow query check passed" "$SLOW_QUERY_RESULT ($CURRENT_IMAGE)" notice
     stop
-  elif [ "$SLOW_QUERY_CHECK" = "warn" ]; then
-    echo "WARNING (not failing the run): ${REASON:-no detail}"
-    annotate "Slow query check failed (warning only)" "${REASON:-no detail}
---- last 15 log lines ---
-$(docker logs --tail 15 "$NAME" 2>&1 || true)" warning
   else
-    fail "slow query"
+    fail "slow queries"
   fi
+fi
+
+if [ "$FAILED" -eq 0 ] && [ -n "$SLOW_QUERY_COMPARE" ]; then
+  log "For comparison only: the same slow queries against $OLD_IMAGE"
+  start "$OLD_IMAGE" "$WORKDIR/compare"
+  if wait_healthy; then
+    check_slow_query_survival || true
+    echo "previous image: ${SLOW_QUERY_RESULT:-$REASON}"
+    annotate "Slow queries on the previous image (comparison only)" "${SLOW_QUERY_RESULT:-$REASON} ($CURRENT_IMAGE)
+--- last 12 log lines ---
+$(docker logs --tail 12 "$NAME" 2>&1 || true)" notice
+  else
+    echo "previous image didn't start; nothing to compare"
+  fi
+  docker rm -f "$NAME" >/dev/null 2>&1 || true
 fi
 
 if [ "$FAILED" -ne 0 ]; then

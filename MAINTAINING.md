@@ -20,6 +20,19 @@ Docker image. See `git log upstream/master..master` for the full list.
   database timeout, and the timed-out query took the whole app down with it (a restart every
   day at 01:00 UTC). It now only checks sources that have a retention period or cutoff date, one
   at a time. The database timeout is also raised to 60s, adjustable with `DATABASE_TIMEOUT_MS`.
+- **A slow database query can no longer take the app down.** When a query ran past its timeout,
+  the SQLite driver (exqlite 0.31) closed the connection but left the query running on it. When
+  the query finished it could touch the closed connection and crash the whole Erlang VM, with
+  nothing in the log; Docker then restarted the container. The driver is updated to a version
+  that cancels the query instead, so a timeout only fails that one query (jobs retry, pages can
+  be reloaded).
+- **Large libraries put far less load on the database.** A video's row is big (it holds the
+  description), and several queries that run constantly were reading every row: the "what's
+  pending for this source?" check after each index, queueing downloads, the daily
+  quality-upgrade job and the home page totals. They now read only the rows they need, mostly
+  straight from small indexes, and download jobs are queued by ID instead of loading whole rows.
+  The first start after updating builds those indexes, which can take a minute or two on a big
+  library.
 - **Fast indexing no longer re-requests unavailable videos on every run**, and YouTube's newer
   "Join this channel…" error wording is recognised.
 - **Indexing and source-metadata jobs no longer crash on bad yt-dlp output** (upstream #899).
@@ -47,12 +60,24 @@ Every push runs the full upstream test suite plus linting (`lint_and_test.yml`).
 1. Secret scan (gitleaks) and the test suite
 2. Build the image and push it as `sha-<commit>`
 3. Boot it with `tooling/smoke_test.sh`: fresh install, upgrade from upstream's image (and from
-   this fork's current `stable`), and rollback to the older image on the upgraded database
+   this fork's current `stable`), rollback to the older image on the upgraded database, and a
+   batch of database queries that outlive their timeout (each has to be cancelled, and the app
+   has to survive them)
 4. Only if all of that passes, tag it `edge` (or `stable` + `v*` for release tags)
 
 `master` is also rebuilt weekly so `edge` picks up new yt-dlp, Deno and OS security updates.
 
 To release: `git tag v2026.10.18 && git push origin v2026.10.18`.
+
+## Updating a dependency
+
+Elixir packages are pinned in `mix.lock`. To update one without installing Elixir, run the
+**Preview a dependency update** workflow from the Actions tab (or
+`gh workflow run update_dependency.yml -f packages="exqlite"`). It changes nothing itself: the
+run's summary page shows the resulting `mix.lock` diff. Apply that diff, push it, and the
+update goes through the same tests and smoke test as any other change.
+
+Hex also lists known security advisories for the locked packages in that workflow's log.
 
 ## This repo is public
 

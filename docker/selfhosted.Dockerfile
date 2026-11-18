@@ -103,9 +103,12 @@ RUN apt-get update -y && \
     "linux/amd64")   echo "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux"   ;; \
     "linux/arm64")   echo "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64" ;; \
     *)               echo "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux"        ;; esac) && \
-    curl -L ${YT_DLP_DOWNLOAD} -o /usr/local/bin/yt-dlp && \
+    curl -fL --retry 5 --retry-all-errors ${YT_DLP_DOWNLOAD} -o /usr/local/bin/yt-dlp && \
     chmod a+rx /usr/local/bin/yt-dlp && \
-    yt-dlp -U && \
+    # That URL is already the newest release, so there's nothing for `yt-dlp -U` to do here.
+    # It also asks GitHub's API, which rate-limits shared CI runners and failed the build.
+    # Just check that the download is a working binary. (The app updates yt-dlp when it starts.)
+    yt-dlp --version && \
     # Set the locale
     sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen && \
     # Clean up
