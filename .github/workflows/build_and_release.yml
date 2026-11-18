@@ -112,10 +112,6 @@ jobs:
     name: Fresh install, upgrade and rollback
     needs: build
     runs-on: ubuntu-latest
-    env:
-      # One-off: also run the slow query check against the previous image (old SQLite driver)
-      # to compare. Report-only; remove once that result has been read.
-      SLOW_QUERY_COMPARE: '1'
     steps:
       - uses: actions/checkout@v4
 

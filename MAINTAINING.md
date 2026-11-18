@@ -25,7 +25,8 @@ Docker image. See `git log upstream/master..master` for the full list.
   the query finished it could touch the closed connection and crash the whole Erlang VM, with
   nothing in the log; Docker then restarted the container. The driver is updated to a version
   that cancels the query instead, so a timeout only fails that one query (jobs retry, pages can
-  be reloaded).
+  be reloaded). The smoke test reproduces this: upstream's image dies on its slow query check
+  (`SLOW_QUERY_COMPARE=1 tooling/smoke_test.sh <image>` shows it), this fork's image passes.
 - **Large libraries put far less load on the database.** A video's row is big (it holds the
   description), and several queries that run constantly were reading every row: the "what's
   pending for this source?" check after each index, queueing downloads, the daily
