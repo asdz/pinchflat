@@ -304,7 +304,7 @@ defmodule Pinchflat.SlowIndexing.SlowIndexingHelpersTest do
 
     test "passes the source's download options to the yt-dlp runner", %{source: source} do
       expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, opts, _ot, _addl_opts ->
-        assert {:output, "/tmp/test/media/%(title)S.%(ext)S"} in opts
+        assert {:output, "/tmp/test/media/%(title).170B.%(ext)S"} in opts
         assert {:remux_video, "mp4"} in opts
         {:ok, source_attributes_return_fixture()}
       end)

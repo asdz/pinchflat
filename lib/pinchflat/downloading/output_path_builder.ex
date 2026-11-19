@@ -46,6 +46,12 @@ defmodule Pinchflat.Downloading.OutputPathBuilder do
   # but if in doubt just search the codebase for `OutputPathBuilder.build`.
   defp custom_yt_dlp_option_map do
     %{
+      # File names can be at most 255 bytes. Titles in Chinese, Japanese, emoji etc. take 3-4 bytes
+      # per character, so a long one plus the extension (`.info.json`, `.f399.mp4.part`, ...) went
+      # over and the download failed with "File name too long" every time. 170 bytes never shortens
+      # a title written in plain English letters (YouTube caps titles at 100 characters) and leaves
+      # room for the rest of the file name. `%(title)s` still gives the full title if wanted.
+      "title" => "%(title).170B",
       # Individual parts of the upload date
       "upload_year" => "%(upload_date>%Y)S",
       "upload_month" => "%(upload_date>%m)S",

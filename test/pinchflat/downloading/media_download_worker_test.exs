@@ -147,6 +147,28 @@ defmodule Pinchflat.Downloading.MediaDownloadWorkerTest do
       end)
     end
 
+    @errors_not_worth_retrying_now [
+      "ERROR: [youtube] abc123: Premieres in 8 hours",
+      "ERROR: [youtube] abc123: This live event will begin in 3 days.",
+      "ERROR: [Errno 36] File name too long: '/downloads/some very long title.webp'",
+      "ERROR: Cannot write video metadata to JSON file /downloads/some very long title.info.json"
+    ]
+
+    for message <- @errors_not_worth_retrying_now do
+      test "does not set the job to retryable for: #{message}", %{media_item: media_item} do
+        expect(YtDlpRunnerMock, :run, 2, fn
+          _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, "{}"}
+          _url, :download, _opts, _ot, _addl -> {:error, unquote(message), 1}
+        end)
+
+        Oban.Testing.with_testing_mode(:inline, fn ->
+          {:ok, job} = Oban.insert(MediaDownloadWorker.new(%{id: media_item.id, quality_upgrade?: true}))
+
+          assert job.state == "completed"
+        end)
+      end
+    end
+
     test "does not set the job to retryable you aren't a member", %{media_item: media_item} do
       expect(YtDlpRunnerMock, :run, 2, fn
         _url, :get_downloadable_status, _opts, _ot, _addl ->

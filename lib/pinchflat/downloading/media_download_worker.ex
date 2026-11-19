@@ -133,7 +133,14 @@ defmodule Pinchflat.Downloading.MediaDownloadWorker do
       [
         "Video unavailable",
         "Sign in to confirm",
-        "Private video"
+        "Private video",
+        # Not out yet. The next index tries again; retrying every few minutes until then
+        # just used up all 20 attempts before it was released.
+        "Premieres in",
+        "This live event will begin in",
+        # The same file name fails the same way on every attempt
+        "File name too long",
+        "Cannot write video metadata"
       ] ++ MediaDownloader.members_only_errors()
 
     if String.contains?(to_string(message), non_retryable_errors) do

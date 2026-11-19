@@ -34,6 +34,13 @@ Docker image. See `git log upstream/master..master` for the full list.
   straight from small indexes, and download jobs are queued by ID instead of loading whole rows.
   The first start after updating builds those indexes, which can take a minute or two on a big
   library.
+- **Long non-English titles no longer fail to download.** A file name can be at most 255 bytes,
+  and Chinese/Japanese/emoji characters take 3-4 bytes each, so a long title plus `.info.json` or
+  `.webp` went over and the download failed ("File name too long", "Cannot write video
+  metadata"). `{{ title }}` in output templates is now capped at 170 bytes, which never shortens a
+  title in plain English letters. Write `%(title)s` instead to keep the old, uncapped behaviour.
+- **Downloads that can't succeed yet aren't retried 20 times in a row**: premieres and live
+  events that haven't started, and file-name errors. The next index tries them again.
 - **Fast indexing no longer re-requests unavailable videos on every run**, and YouTube's newer
   "Join this channel…" error wording is recognised.
 - **Indexing and source-metadata jobs no longer crash on bad yt-dlp output** (upstream #899).

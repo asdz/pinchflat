@@ -96,7 +96,7 @@ defmodule Pinchflat.FastIndexing.FastIndexingHelpersTest do
       expect(HTTPClientMock, :get, fn _url -> {:ok, "<yt:videoId>test_1</yt:videoId>"} end)
 
       expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes, opts, _ot, _addl_opts ->
-        assert {:output, "/tmp/test/media/%(title)S.%(ext)S"} in opts
+        assert {:output, "/tmp/test/media/%(title).170B.%(ext)S"} in opts
         assert {:remux_video, "mp4"} in opts
         {:ok, media_attributes_return_fixture()}
       end)

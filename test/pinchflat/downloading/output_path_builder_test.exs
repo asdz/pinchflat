@@ -7,7 +7,7 @@ defmodule Pinchflat.Downloading.OutputPathBuilderTest do
     test "it expands 'standard' curly brace variables in the template" do
       assert {:ok, res} = OutputPathBuilder.build("/videos/{{ title }}.{{ ext }}")
 
-      assert res == "/videos/%(title)S.%(ext)S"
+      assert res == "/videos/%(title).170B.%(ext)S"
     end
 
     test "it expands 'custom' curly brace variables in the template" do
@@ -20,6 +20,12 @@ defmodule Pinchflat.Downloading.OutputPathBuilderTest do
       assert {:ok, res} = OutputPathBuilder.build("/videos/{{ custom }}.{{ ext }}", %{"custom" => "test"})
 
       assert res == "/videos/test.%(ext)S"
+    end
+
+    test "limits titles to a length that keeps file names valid" do
+      assert {:ok, res} = OutputPathBuilder.build("/videos/{{ title }} [{{ id }}].{{ ext }}")
+
+      assert res == "/videos/%(title).170B [%(id)S].%(ext)S"
     end
 
     test "it leaves yt-dlp variables alone" do
